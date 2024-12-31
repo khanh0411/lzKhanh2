@@ -275,7 +275,7 @@ exports.getAllCourses2 = async (req, res) => {
 exports.getCourseById = async (req, res) => {
     try {
         const user_id = req.user?.user_id;
-        const { course_id } = req.body; 
+        const { course_id } = req.body;
         if (!mongoose.Types.ObjectId.isValid(course_id)) {
             return res.status(400).json({ message: 'Invalid course ID' });
         }
@@ -927,7 +927,7 @@ exports.result = async (req, res) => {
         //     return res.status(404).json({ message: 'Question set not found' });
         // }
 
-        const newResult = new Result({ user_id, questionSet_id: questionSetId, course_id: new mongoose.Types.ObjectId(course_id), answers: questions, result, timeTaken,count });
+        const newResult = new Result({ user_id, questionSet_id: questionSetId, course_id: new mongoose.Types.ObjectId(course_id), answers: questions, result, timeTaken, count });
         await newResult.save();
 
 
@@ -970,51 +970,73 @@ exports.getResults = async (req, res) => {
             },
             {
                 $addFields: {
-                    questionSetName: { $arrayElemAt: ['$questionSet.name', 0] } // Get first name from questionSet array
+                    questionSetName: { $arrayElemAt: ['$questionSet.name', 0] }
+                }
+            },
+            {
+                $sort: {
+                    result: -1,
+                    createdAt: -1
                 }
             },
             {
                 $group: {
                     _id: "$questionSet_id",
-                    result: { $max: '$result' }, // Keep maximum result (or adjust as necessary)
+                    result: { $first: '$result' },
                     course_id: { $first: '$course_id' },
                     user_id: { $first: '$user_id' },
                     questionSetName: { $first: '$questionSetName' },
                     timeTaken: { $first: '$timeTaken' },
                     createdAt: { $first: '$createdAt' },
-                    answers: { $push: '$answers' } // Push entire answers array
+                    answers: { $first: '$answers' }
                 }
             },
             {
                 $addFields: {
-                    countCorrected: {
-                        $size: {
-                            $filter: {
-                                input: { $arrayElemAt: ['$answers', 0] }, // Access the first element of the answers array
-                                as: 'answer',
-                                cond: { $eq: ['$$answer.isCorrect', true] }
-                            }
+                    // Chuyển đổi answers từ object sang array nếu cần
+                    answersArray: {
+                        $cond: {
+                            if: { $isArray: '$answers' },
+                            then: '$answers',
+                            else: { $objectToArray: '$answers' }
                         }
-                    },
-                    totalAnswers: { $size: { $arrayElemAt: ['$answers', 0] } }, // Count all answers
-                    countIncorrected: {
-                        $subtract: [
-                            { $size: { $arrayElemAt: ['$answers', 0] } }, // Total number of answers
-                            {
-                                $size: {
-                                    $filter: {
-                                        input: { $arrayElemAt: ['$answers', 0] },
-                                        as: 'answer',
-                                        cond: { $eq: ['$$answer.isCorrect', true] }
-                                    }
-                                }
-                            }
-                        ]
                     }
                 }
             },
             {
-                $sort: { createdAt: 1 }
+                $addFields: {
+                    // Đếm số câu đúng
+                    countCorrected: {
+                        $size: {
+                            $filter: {
+                                input: '$answersArray',
+                                as: 'answer',
+                                cond: {
+                                    $eq: [
+                                        {
+                                            $cond: [
+                                                { $eq: [{ $type: '$$answer.isCorrect' }, 'missing'] },
+                                                '$$answer.v.isCorrect',
+                                                '$$answer.isCorrect'
+                                            ]
+                                        },
+                                        true
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    // Tổng số câu trả lời
+                    totalAnswers: { $size: '$answersArray' }
+                }
+            },
+            {
+                $addFields: {
+                    // Tính số câu sai
+                    countIncorrected: {
+                        $subtract: ['$totalAnswers', '$countCorrected']
+                    }
+                }
             },
             {
                 $project: {
@@ -1036,7 +1058,7 @@ exports.getResults = async (req, res) => {
         res.status(200).json(results);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({ message: 'Lỗi server', error: error.message });
     }
 };
 
@@ -1067,7 +1089,7 @@ exports.getResultByIdQuestionSet = async (req, res) => {
             {
                 $match: { user_id: new mongoose.Types.ObjectId(user_id), questionSet_id: new mongoose.Types.ObjectId(questionSet_id) }
             },
-            {   
+            {
                 $lookup: {
                     from: 'questions',
                     localField: 'answers.questionId',
@@ -1075,14 +1097,16 @@ exports.getResultByIdQuestionSet = async (req, res) => {
                     as: 'questions'
                 }
             },
-            {$limit:1}
-            ,{
-                $group:{
+            { $limit: 1 }
+            , {
+                $group: {
                     _id: '$_id',
-                    selectedAnswer: { $first: {
-                        key: '$answers.selectedAnswer',
-                        value: '$answers.questionId'
-                    }},
+                    selectedAnswer: {
+                        $first: {
+                            key: '$answers.selectedAnswer',
+                            value: '$answers.questionId'
+                        }
+                    },
                     questions: { $first: '$questions' },
                 }
             },
@@ -1093,7 +1117,7 @@ exports.getResultByIdQuestionSet = async (req, res) => {
                     questions: 1
                 }
             }
-        ])  
+        ])
         if (!results) {
             return res.status(404).json({ message: 'Result not found' });
         }
@@ -1109,7 +1133,7 @@ exports.getResultByIdQuestionSet = async (req, res) => {
 
 
 
-const  b = {
+const b = {
     "key": [
         [
             "dung"
